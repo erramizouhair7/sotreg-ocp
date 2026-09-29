@@ -18,6 +18,8 @@ import Drivers from "./pages/Drivers";
 import KPIsOKR from "./pages/KPIsOKR";
 import TechnicalSupport from "./pages/TechnicalSupport";
 
+import AlertsCenter from "./pages/AlertsCenter";
+
 function ProtectedApplication() {
   const location = useLocation();
 
@@ -41,47 +43,42 @@ function ProtectedApplication() {
 
           <Routes>
 
-            <Route
-              path="/"
-              element={<Dashboard />}
-            />
+  <Route
+    path="/"
+    element={<Dashboard />}
+  />
 
-            <Route
-              path="/routes"
-              element={<RoutesPage />}
-            />
+  <Route
+    path="/alertes"
+    element={<AlertsCenter />}
+  />
 
-            <Route
-              path="/vehicules"
-              element={<Vehicles />}
-            />
+  <Route
+    path="/routes"
+    element={<RoutesPage />}
+  />
 
-            <Route
-              path="/chauffeurs"
-              element={<Drivers />}
-            />
+  <Route
+    path="/vehicules"
+    element={<Vehicles />}
+  />
 
-            <Route
-              path="/kpis"
-              element={<KPIsOKR />}
-            />
+  <Route
+    path="/chauffeurs"
+    element={<Drivers />}
+  />
 
-            <Route
-              path="/support"
-              element={<TechnicalSupport />}
-            />
+  <Route
+    path="/kpis"
+    element={<KPIsOKR />}
+  />
 
-            <Route
-              path="*"
-              element={
-                <Navigate
-                  to="/"
-                  replace
-                />
-              }
-            />
+  <Route
+    path="/support"
+    element={<TechnicalSupport />}
+  />
 
-          </Routes>
+</Routes>
 
         </main>
 

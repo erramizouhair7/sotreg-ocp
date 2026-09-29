@@ -1,126 +1,638 @@
-import { useData } from "../hooks/useData";
-
 import {
-  driverPerformance,
-} from "../utils/analytics";
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
+import { useData } from "../hooks/useData";
+import { driverPerformance } from "../utils/analytics";
 import ExportButtons from "../components/ExportButtons";
 
-function scoreColor(score) {
-  if (score >= 85) {
+const STORAGE_KEY =
+  "sotreg_custom_drivers";
+
+const EMPTY_FORM = {
+  driverId: "",
+  name: "",
+  yearsExperience: 0,
+  trips: 0,
+  avgDelay: 0,
+  incidents: 0,
+  complaints: 0,
+};
+
+function calculateScore(
+  driver
+) {
+  const score =
+    100 -
+    Number(
+      driver.avgDelay ||
+        0
+    ) *
+      3 -
+    Number(
+      driver.incidents ||
+        0
+    ) *
+      8 -
+    Number(
+      driver.complaints ||
+        0
+    ) *
+      4;
+
+  return Math.max(
+    0,
+    Math.min(
+      100,
+      Math.round(
+        score
+      )
+    )
+  );
+}
+
+function scoreColor(
+  score
+) {
+  if (
+    score >=
+    85
+  ) {
     return "teal";
   }
 
-  if (score >= 65) {
+  if (
+    score >=
+    65
+  ) {
     return "amber";
   }
 
   return "red";
 }
 
-function scoreEmoji(score) {
-  if (score >= 85) {
+function scoreEmoji(
+  score
+) {
+  if (
+    score >=
+    85
+  ) {
     return "🟢";
   }
 
-  if (score >= 65) {
+  if (
+    score >=
+    65
+  ) {
     return "🟡";
   }
 
   return "🔴";
 }
 
+function loadStoredDrivers() {
+  try {
+    const stored =
+      localStorage.getItem(
+        STORAGE_KEY
+      );
+
+    if (!stored) {
+      return null;
+    }
+
+    const parsed =
+      JSON.parse(
+        stored
+      );
+
+    return Array.isArray(
+      parsed
+    )
+      ? parsed
+      : null;
+  } catch (error) {
+    console.error(
+      "Erreur lecture chauffeurs localStorage :",
+      error
+    );
+
+    return null;
+  }
+}
+
 export default function Drivers() {
-  const data = useData();
+  const data =
+    useData();
+
+  const initialRanked =
+    useMemo(
+      () =>
+        driverPerformance(
+          data
+        ),
+      [data]
+    );
+
+  const [
+    drivers,
+    setDrivers,
+  ] =
+    useState(() => {
+      const stored =
+        loadStoredDrivers();
+
+      return (
+        stored ??
+        initialRanked
+      );
+    });
+
+  const [
+    search,
+    setSearch,
+  ] =
+    useState("");
+
+  const [
+    showModal,
+    setShowModal,
+  ] =
+    useState(false);
+
+  const [
+    editingDriverId,
+    setEditingDriverId,
+  ] =
+    useState(null);
+
+  const [
+    form,
+    setForm,
+  ] =
+    useState(
+      EMPTY_FORM
+    );
+
+  const [
+    formError,
+    setFormError,
+  ] =
+    useState("");
+
+  useEffect(() => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify(
+        drivers
+      )
+    );
+  }, [drivers]);
 
   const ranked =
-    driverPerformance(data);
+    useMemo(() => {
+      const normalizedSearch =
+        search
+          .trim()
+          .toLowerCase();
+
+      return drivers
+        .map(
+          (
+            driver
+          ) => ({
+            ...driver,
+            score:
+              calculateScore(
+                driver
+              ),
+          })
+        )
+        .filter(
+          (
+            driver
+          ) => {
+            if (
+              !normalizedSearch
+            ) {
+              return true;
+            }
+
+            return [
+              driver.driverId,
+              driver.name,
+            ]
+              .join(" ")
+              .toLowerCase()
+              .includes(
+                normalizedSearch
+              );
+          }
+        )
+        .sort(
+          (
+            a,
+            b
+          ) =>
+            b.score -
+            a.score
+        );
+    }, [
+      drivers,
+      search,
+    ]);
+
+  const allRanked =
+    useMemo(
+      () =>
+        drivers
+          .map(
+            (
+              driver
+            ) => ({
+              ...driver,
+              score:
+                calculateScore(
+                  driver
+                ),
+            })
+          )
+          .sort(
+            (
+              a,
+              b
+            ) =>
+              b.score -
+              a.score
+          ),
+      [drivers]
+    );
+
+  const averageScore =
+    allRanked.length >
+    0
+      ? allRanked.reduce(
+          (
+            total,
+            driver
+          ) =>
+            total +
+            driver.score,
+          0
+        ) /
+        allRanked.length
+      : 0;
+
+  const riskCount =
+    allRanked.filter(
+      (
+        driver
+      ) =>
+        driver.score <
+        65
+    ).length;
+
+  const topDriver =
+    allRanked[0];
 
   const exportRows =
     ranked.map(
-      (driver, index) => ({
-        classement:
-          index + 1,
-
-        chauffeur:
+      (
+        driver
+      ) => ({
+        driverId:
+          driver.driverId,
+        name:
           driver.name,
-
-        experience:
-          `${driver.yearsExperience} ans`,
-
-        trajets:
+        yearsExperience:
+          driver.yearsExperience,
+        trips:
           driver.trips,
-
-        retard:
-          `${driver.avgDelay.toFixed(1)} min`,
-
+        avgDelay:
+          driver.avgDelay,
         incidents:
           driver.incidents,
-
-        reclamations:
+        complaints:
           driver.complaints,
-
         score:
-          `${driver.score}/100`,
+          driver.score,
       })
     );
 
   const exportColumns = [
     {
-      key: "classement",
-      label: "#",
+      header:
+        "Identifiant",
+      key:
+        "driverId",
     },
     {
-      key: "chauffeur",
-      label: "Chauffeur",
+      header:
+        "Chauffeur",
+      key:
+        "name",
     },
     {
-      key: "experience",
-      label: "Expérience",
+      header:
+        "Expérience",
+      key:
+        "yearsExperience",
     },
     {
-      key: "trajets",
-      label: "Trajets",
+      header:
+        "Trajets",
+      key:
+        "trips",
     },
     {
-      key: "retard",
-      label: "Retard moyen",
+      header:
+        "Retard moyen",
+      key:
+        "avgDelay",
     },
     {
-      key: "incidents",
-      label: "Incidents",
+      header:
+        "Incidents",
+      key:
+        "incidents",
     },
     {
-      key: "reclamations",
-      label: "Réclamations",
+      header:
+        "Réclamations",
+      key:
+        "complaints",
     },
     {
-      key: "score",
-      label: "Score",
+      header:
+        "Score",
+      key:
+        "score",
     },
   ];
 
-  const averageScore =
-    ranked.length > 0
-      ? (
-          ranked.reduce(
-            (total, driver) =>
-              total + driver.score,
-            0
-          ) / ranked.length
-        ).toFixed(0)
-      : 0;
-
-  const riskDrivers =
-    ranked.filter(
-      (driver) =>
-        driver.score < 65
+  function openAddModal() {
+    setEditingDriverId(
+      null
     );
+
+    setForm({
+      ...EMPTY_FORM,
+    });
+
+    setFormError(
+      ""
+    );
+
+    setShowModal(
+      true
+    );
+  }
+
+  function openEditModal(
+    driver
+  ) {
+    setEditingDriverId(
+      driver.driverId
+    );
+
+    setForm({
+      driverId:
+        driver.driverId,
+      name:
+        driver.name,
+      yearsExperience:
+        driver.yearsExperience,
+      trips:
+        driver.trips,
+      avgDelay:
+        driver.avgDelay,
+      incidents:
+        driver.incidents,
+      complaints:
+        driver.complaints,
+    });
+
+    setFormError(
+      ""
+    );
+
+    setShowModal(
+      true
+    );
+  }
+
+  function closeModal() {
+    setShowModal(
+      false
+    );
+
+    setEditingDriverId(
+      null
+    );
+
+    setFormError(
+      ""
+    );
+  }
+
+  function handleChange(
+    event
+  ) {
+    const {
+      name,
+      value,
+      type,
+    } =
+      event.target;
+
+    setForm(
+      (
+        previous
+      ) => ({
+        ...previous,
+        [name]:
+          type ===
+          "number"
+            ? Number(
+                value
+              )
+            : value,
+      })
+    );
+  }
+
+  function handleSubmit(
+    event
+  ) {
+    event.preventDefault();
+
+    const driverId =
+      form.driverId
+        .trim();
+
+    const name =
+      form.name
+        .trim();
+
+    if (
+      !driverId ||
+      !name
+    ) {
+      setFormError(
+        "L'identifiant et le nom du chauffeur sont obligatoires."
+      );
+
+      return;
+    }
+
+    const duplicate =
+      drivers.some(
+        (
+          driver
+        ) =>
+          driver.driverId ===
+            driverId &&
+          driver.driverId !==
+            editingDriverId
+      );
+
+    if (
+      duplicate
+    ) {
+      setFormError(
+        "Cet identifiant chauffeur existe déjà."
+      );
+
+      return;
+    }
+
+    const normalizedDriver =
+      {
+        driverId,
+        name,
+        yearsExperience:
+          Math.max(
+            0,
+            Number(
+              form.yearsExperience
+            ) || 0
+          ),
+        trips:
+          Math.max(
+            0,
+            Number(
+              form.trips
+            ) || 0
+          ),
+        avgDelay:
+          Math.max(
+            0,
+            Number(
+              form.avgDelay
+            ) || 0
+          ),
+        incidents:
+          Math.max(
+            0,
+            Number(
+              form.incidents
+            ) || 0
+          ),
+        complaints:
+          Math.max(
+            0,
+            Number(
+              form.complaints
+            ) || 0
+          ),
+      };
+
+    if (
+      editingDriverId
+    ) {
+      setDrivers(
+        (
+          previous
+        ) =>
+          previous.map(
+            (
+              driver
+            ) =>
+              driver.driverId ===
+              editingDriverId
+                ? normalizedDriver
+                : driver
+          )
+      );
+    } else {
+      setDrivers(
+        (
+          previous
+        ) => [
+          ...previous,
+          normalizedDriver,
+        ]
+      );
+    }
+
+    closeModal();
+  }
+
+  function deleteDriver(
+    driver
+  ) {
+    const confirmed =
+      window.confirm(
+        `Supprimer le chauffeur ${driver.name} ?`
+      );
+
+    if (
+      !confirmed
+    ) {
+      return;
+    }
+
+    setDrivers(
+      (
+        previous
+      ) =>
+        previous.filter(
+          (
+            item
+          ) =>
+            item.driverId !==
+            driver.driverId
+        )
+    );
+  }
+
+  function resetDrivers() {
+    const confirmed =
+      window.confirm(
+        "Restaurer tous les chauffeurs de démonstration d'origine ?"
+      );
+
+    if (
+      !confirmed
+    ) {
+      return;
+    }
+
+    setDrivers(
+      initialRanked
+    );
+  }
 
   return (
     <div>
+
       <div className="page-head">
+
         <div>
+
           <span className="kicker">
             Équipe
           </span>
@@ -130,51 +642,87 @@ export default function Drivers() {
           </h1>
 
           <p>
-            Score composite basé sur le retard moyen,
-            les incidents et les réclamations reçues.
+            Score composite basé sur le
+            retard moyen, les incidents
+            et les réclamations reçues.
           </p>
+
         </div>
 
-        <ExportButtons
-          rows={exportRows}
-          columns={exportColumns}
-          title="Performance des chauffeurs - SOTREG Analytics"
-          filename="sotreg-chauffeurs"
-        />
+        <div className="crud-page-actions">
+
+          <ExportButtons
+            rows={
+              exportRows
+            }
+            columns={
+              exportColumns
+            }
+            filename="chauffeurs-sotreg"
+            title="Performance chauffeurs SOTREG"
+          />
+
+          <button
+            type="button"
+            className="admin-save-btn"
+            onClick={
+              openAddModal
+            }
+          >
+            + Ajouter un chauffeur
+          </button>
+
+        </div>
+
       </div>
 
+
       <div className="kpi-row">
+
         <div className="kpi-card">
+
           <span className="kpi-label">
             Score moyen
           </span>
 
           <span className="kpi-value">
-            {averageScore}/100
+            {averageScore.toFixed(
+              0
+            )}
+            /100
           </span>
+
         </div>
 
+
         <div className="kpi-card">
+
           <span className="kpi-label">
             Chauffeurs à risque
           </span>
 
           <span
             className={`kpi-value ${
-              riskDrivers.length > 0
+              riskCount >
+              0
                 ? "bad"
                 : ""
             }`}
           >
-            {riskDrivers.length}
+            {
+              riskCount
+            }
           </span>
 
           <span className="kpi-sub">
             score &lt; 65
           </span>
+
         </div>
 
+
         <div className="kpi-card">
+
           <span className="kpi-label">
             Top performeur
           </span>
@@ -182,117 +730,550 @@ export default function Drivers() {
           <span
             className="kpi-value"
             style={{
-              fontSize: 20,
+              fontSize:
+                20,
             }}
           >
-            {ranked[0]?.name || "—"}
+            {topDriver?.name ||
+              "—"}
           </span>
 
           <span className="kpi-sub">
-            {ranked[0]
-              ? `${ranked[0].score}/100`
-              : "Aucune donnée"}
+            {topDriver
+              ? `${topDriver.score}/100`
+              : "Aucun chauffeur"}
           </span>
+
         </div>
+
       </div>
+
 
       <div className="card">
-        <h3>
-          Classement complet ({ranked.length} chauffeurs)
-        </h3>
 
-        <p className="card-sub">
-          Score = 100 − (retard moyen × 3)
-          − (incidents × 8)
-          − (réclamations × 4),
-          plafonné entre 0 et 100.
-        </p>
+        <div className="crud-table-toolbar">
 
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Chauffeur</th>
-              <th>Expérience</th>
-              <th>Trajets</th>
-              <th>Retard moyen</th>
-              <th>Incidents</th>
-              <th>Réclamations</th>
-              <th>Score</th>
-            </tr>
-          </thead>
+          <div>
 
-          <tbody>
-            {ranked.map(
-              (driver, index) => (
-                <tr key={driver.driverId}>
-                  <td className="mono">
-                    {index + 1}
-                  </td>
+            <h3>
+              Classement complet (
+              {
+                drivers.length
+              }{" "}
+              chauffeurs)
+            </h3>
 
-                  <td>
-                    {driver.name}
-                  </td>
+            <p className="card-sub">
+              Score = 100 −
+              (retard moyen × 3) −
+              (incidents × 8) −
+              (réclamations × 4),
+              plafonné entre 0 et 100.
+            </p>
 
-                  <td className="mono">
-                    {driver.yearsExperience} ans
-                  </td>
+          </div>
 
-                  <td className="mono">
-                    {driver.trips}
-                  </td>
+          <div className="crud-toolbar-controls">
 
-                  <td className="mono">
-                    {driver.avgDelay.toFixed(1)} min
-                  </td>
+            <input
+              type="search"
+              className="crud-search-input"
+              placeholder="Rechercher chauffeur..."
+              value={
+                search
+              }
+              onChange={(
+                event
+              ) =>
+                setSearch(
+                  event
+                    .target
+                    .value
+                )
+              }
+            />
 
-                  <td className="mono">
-                    {driver.incidents}
-                  </td>
+            <button
+              type="button"
+              className="crud-reset-btn"
+              onClick={
+                resetDrivers
+              }
+            >
+              Restaurer
+            </button>
 
-                  <td className="mono">
-                    {driver.complaints}
-                  </td>
+          </div>
 
-                  <td>
-                    <div className="score-cell">
-                      <div
-                        className="bar-track"
-                        style={{
-                          width: 70,
-                        }}
-                      >
-                        <div
-                          className={`bar-fill ${scoreColor(
-                            driver.score
-                          )}`}
-                          style={{
-                            width: `${driver.score}%`,
-                          }}
-                        />
+        </div>
+
+
+        <div className="crud-table-scroll">
+
+          <table className="data-table">
+
+            <thead>
+
+              <tr>
+                <th>#</th>
+                <th>
+                  Chauffeur
+                </th>
+                <th>
+                  Expérience
+                </th>
+                <th>
+                  Trajets
+                </th>
+                <th>
+                  Retard moyen
+                </th>
+                <th>
+                  Incidents
+                </th>
+                <th>
+                  Réclamations
+                </th>
+                <th>
+                  Score
+                </th>
+                <th>
+                  Actions
+                </th>
+              </tr>
+
+            </thead>
+
+            <tbody>
+
+              {ranked.map(
+                (
+                  driver,
+                  index
+                ) => (
+
+                  <tr
+                    key={
+                      driver.driverId
+                    }
+                  >
+
+                    <td className="mono">
+                      {index +
+                        1}
+                    </td>
+
+                    <td>
+
+                      <div className="driver-name-cell">
+
+                        <span className="driver-mini-avatar">
+                          {driver.name
+                            ?.charAt(
+                              0
+                            )
+                            ?.toUpperCase()}
+                        </span>
+
+                        <div>
+
+                          <strong>
+                            {
+                              driver.name
+                            }
+                          </strong>
+
+                          <small>
+                            {
+                              driver.driverId
+                            }
+                          </small>
+
+                        </div>
+
                       </div>
 
-                      <span className="score-num">
-                        {scoreEmoji(
-                          driver.score
-                        )}{" "}
-                        {driver.score}
-                      </span>
-                    </div>
+                    </td>
+
+                    <td className="mono">
+                      {
+                        driver.yearsExperience
+                      }{" "}
+                      ans
+                    </td>
+
+                    <td className="mono">
+                      {
+                        driver.trips
+                      }
+                    </td>
+
+                    <td className="mono">
+                      {Number(
+                        driver.avgDelay ||
+                          0
+                      ).toFixed(
+                        1
+                      )}{" "}
+                      min
+                    </td>
+
+                    <td className="mono">
+                      {
+                        driver.incidents
+                      }
+                    </td>
+
+                    <td className="mono">
+                      {
+                        driver.complaints
+                      }
+                    </td>
+
+                    <td>
+
+                      <div className="score-cell">
+
+                        <div
+                          className="bar-track"
+                          style={{
+                            width:
+                              70,
+                          }}
+                        >
+
+                          <div
+                            className={`bar-fill ${scoreColor(
+                              driver.score
+                            )}`}
+                            style={{
+                              width:
+                                `${driver.score}%`,
+                            }}
+                          />
+
+                        </div>
+
+                        <span className="score-num">
+                          {scoreEmoji(
+                            driver.score
+                          )}{" "}
+                          {
+                            driver.score
+                          }
+                        </span>
+
+                      </div>
+
+                    </td>
+
+                    <td>
+
+                      <div className="crud-row-actions">
+
+                        <button
+                          type="button"
+                          className="crud-edit-btn"
+                          onClick={() =>
+                            openEditModal(
+                              driver
+                            )
+                          }
+                        >
+                          Modifier
+                        </button>
+
+                        <button
+                          type="button"
+                          className="crud-delete-btn"
+                          onClick={() =>
+                            deleteDriver(
+                              driver
+                            )
+                          }
+                        >
+                          Supprimer
+                        </button>
+
+                      </div>
+
+                    </td>
+
+                  </tr>
+
+                )
+              )}
+
+              {ranked.length ===
+                0 && (
+                <tr>
+
+                  <td
+                    colSpan={
+                      9
+                    }
+                    className="crud-empty-row"
+                  >
+                    Aucun chauffeur trouvé.
                   </td>
+
                 </tr>
-              )
-            )}
-          </tbody>
-        </table>
+              )}
+
+            </tbody>
+
+          </table>
+
+        </div>
+
       </div>
 
+
       <p className="section-note">
-        Note : ce score est un exemple simple à des fins
-        de démonstration. Une version réelle nécessiterait
-        un accès encadré aux données individuelles et une
-        validation avec les RH avant tout usage en évaluation.
+        Note : ce score est un exemple simple
+        à des fins de démonstration.
+        Une version réelle nécessiterait
+        un accès encadré aux données
+        individuelles et une validation
+        avec les RH avant tout usage
+        en évaluation.
       </p>
+
+
+      {showModal && (
+
+        <div
+          className="crud-modal-backdrop"
+          onMouseDown={
+            closeModal
+          }
+        >
+
+          <div
+            className="crud-modal"
+            onMouseDown={(
+              event
+            ) =>
+              event.stopPropagation()
+            }
+          >
+
+            <div className="crud-modal-header">
+
+              <div>
+
+                <span className="kicker">
+                  Gestion équipe
+                </span>
+
+                <h2>
+                  {editingDriverId
+                    ? "Modifier le chauffeur"
+                    : "Ajouter un chauffeur"}
+                </h2>
+
+              </div>
+
+              <button
+                type="button"
+                className="crud-modal-close"
+                onClick={
+                  closeModal
+                }
+              >
+                ×
+              </button>
+
+            </div>
+
+
+            <form
+              onSubmit={
+                handleSubmit
+              }
+              className="crud-form"
+            >
+
+              <div className="crud-form-grid">
+
+                <label>
+                  Identifiant chauffeur
+
+                  <input
+                    name="driverId"
+                    value={
+                      form.driverId
+                    }
+                    onChange={
+                      handleChange
+                    }
+                    placeholder="Ex: D23"
+                    disabled={
+                      Boolean(
+                        editingDriverId
+                      )
+                    }
+                  />
+                </label>
+
+
+                <label>
+                  Nom complet
+
+                  <input
+                    name="name"
+                    value={
+                      form.name
+                    }
+                    onChange={
+                      handleChange
+                    }
+                    placeholder="Nom et prénom"
+                  />
+                </label>
+
+
+                <label>
+                  Expérience (années)
+
+                  <input
+                    type="number"
+                    min="0"
+                    name="yearsExperience"
+                    value={
+                      form.yearsExperience
+                    }
+                    onChange={
+                      handleChange
+                    }
+                  />
+                </label>
+
+
+                <label>
+                  Nombre de trajets
+
+                  <input
+                    type="number"
+                    min="0"
+                    name="trips"
+                    value={
+                      form.trips
+                    }
+                    onChange={
+                      handleChange
+                    }
+                  />
+                </label>
+
+
+                <label>
+                  Retard moyen (min)
+
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    name="avgDelay"
+                    value={
+                      form.avgDelay
+                    }
+                    onChange={
+                      handleChange
+                    }
+                  />
+                </label>
+
+
+                <label>
+                  Incidents
+
+                  <input
+                    type="number"
+                    min="0"
+                    name="incidents"
+                    value={
+                      form.incidents
+                    }
+                    onChange={
+                      handleChange
+                    }
+                  />
+                </label>
+
+
+                <label>
+                  Réclamations
+
+                  <input
+                    type="number"
+                    min="0"
+                    name="complaints"
+                    value={
+                      form.complaints
+                    }
+                    onChange={
+                      handleChange
+                    }
+                  />
+                </label>
+
+              </div>
+
+
+              <div className="crud-score-preview">
+
+                Score calculé
+
+                <strong>
+                  {calculateScore(
+                    form
+                  )}
+                  /100
+                </strong>
+
+              </div>
+
+
+              {formError && (
+                <div className="crud-form-error">
+                  {
+                    formError
+                  }
+                </div>
+              )}
+
+
+              <div className="crud-modal-footer">
+
+                <button
+                  type="button"
+                  className="admin-reset-btn"
+                  onClick={
+                    closeModal
+                  }
+                >
+                  Annuler
+                </button>
+
+                <button
+                  type="submit"
+                  className="admin-save-btn"
+                >
+                  {editingDriverId
+                    ? "Enregistrer"
+                    : "Ajouter le chauffeur"}
+                </button>
+
+              </div>
+
+            </form>
+
+          </div>
+
+        </div>
+      )}
+
     </div>
   );
 }
